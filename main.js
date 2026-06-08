@@ -7,17 +7,19 @@ const CREATURES_COUNT = 10;
 const START_FOOD_COUNT = 300;
 const FOOD_CREATION_RATE = 0.5;
 
-const START_ENERGY = 20;
+const START_ENERGY = 100;
+const MAX_ENERGY = 550;
+
 const ENERGY_GAIN_FROM_FOOD = 50;
 const ENERGY_LOSS_PER_TICK = 1;
 
-const ENERGY_FOR_REPRODUCTION = 200;
+const GENE_ENERGY_COST_MIN = 0.75
+const GENE_ENERGY_COST_MAX = 1.25
+
+const ENERGY_FOR_REPRODUCTION = 500;
 const ENERGY_COST_FOR_REPRODUCTION = ENERGY_FOR_REPRODUCTION / 2;
 
-const GENE_MUTATION_RATE = 0.00001
-
-const GENE_ENERGY_COST_MIN = 0.9
-const GENE_ENERGY_COST_MAX = 1.1
+const GENE_MUTATION_RATE = 0.000001
 
 // const CREATURE_COLOR = "#4da3ff"; // obsolete - now we use the genes to determine the color
 const FOOD_COLOR = "gray";
@@ -70,6 +72,8 @@ function findFoodAt(x, y) {
 
 function update() {
 
+    const newborns = [];
+
     for (const creature of creatures) {
 
         // Move creature
@@ -95,6 +99,9 @@ function update() {
 
         if (foodIndex !== -1) {
             creature.energy += ENERGY_GAIN_FROM_FOOD;
+            if (creature.energy > MAX_ENERGY) {
+                creature.energy = MAX_ENERGY;
+            }
             foods.splice(foodIndex, 1);
         }
 
@@ -119,11 +126,13 @@ function update() {
 
                 
             };
-            creatures.push(newCreature);
+            newborns.push(newCreature);
             creature.energy -= ENERGY_COST_FOR_REPRODUCTION;
         }
 
     }
+
+    creatures.push(...newborns);
 
     // Remove dead creatures
     for (let i = creatures.length - 1; i >= 0; i--) {

@@ -1,19 +1,25 @@
-const GRID_SIZE = 30;
+const GRID_SIZE = 50;
 const CELL_SIZE = 12;
 
-const TICKS_PER_SECOND = 10;
+const TICKS_PER_SECOND = 50;
 
-const CREATURES_COUNT = 3;
-const START_FOOD_COUNT = 100;
-const FOOD_CREATION_RATE = 0.3;
+const CREATURES_COUNT = 10;
+const START_FOOD_COUNT = 300;
+const FOOD_CREATION_RATE = 0.5;
 
 const START_ENERGY = 20;
 const ENERGY_GAIN_FROM_FOOD = 50;
 const ENERGY_LOSS_PER_TICK = 1;
-const ENERGY_FOR_REPRODUCTION = 100;
+
+const ENERGY_FOR_REPRODUCTION = 200;
 const ENERGY_COST_FOR_REPRODUCTION = ENERGY_FOR_REPRODUCTION / 2;
 
-const CREATURE_COLOR = "#4da3ff";
+const GENE_MUTATION_RATE = 0.00001
+
+const GENE_ENERGY_COST_MIN = 0.9
+const GENE_ENERGY_COST_MAX = 1.1
+
+// const CREATURE_COLOR = "#4da3ff"; // obsolete - now we use the genes to determine the color
 const FOOD_COLOR = "gray";
 
 const canvas = document.getElementById("world");
@@ -37,7 +43,14 @@ for (let i = 0; i < CREATURES_COUNT; i++) {
         y: Math.floor(Math.random() * GRID_SIZE),
 
         energy: START_ENERGY,
-        age: 0
+        age: 0,
+        generation: 0,
+
+        // genetic information
+        genes: {
+            // multiplicator on cost of energy each tick
+            energy_cost_multiplicator: Math.random() * (GENE_ENERGY_COST_MAX - GENE_ENERGY_COST_MIN) + GENE_ENERGY_COST_MIN,
+        }
     });
 }
 
@@ -74,7 +87,7 @@ function update() {
         creature.y = Math.max(0, Math.min(GRID_SIZE - 1, creature.y));
 
         // Lose energy
-        creature.energy -= ENERGY_LOSS_PER_TICK;
+        creature.energy -= ENERGY_LOSS_PER_TICK * creature.genes.energy_cost_multiplicator;
         creature.age++;
 
         // Check for food
@@ -87,11 +100,24 @@ function update() {
 
         // Check for reproduction
         if (creature.energy >= ENERGY_FOR_REPRODUCTION) {
+            let child_energy_cost_multiplicator = creature.genes.energy_cost_multiplicator + ((Math.random() * 2 - 1) * GENE_MUTATION_RATE)
+            if (child_energy_cost_multiplicator < GENE_ENERGY_COST_MIN) child_energy_cost_multiplicator = GENE_ENERGY_COST_MIN
+            if (child_energy_cost_multiplicator > GENE_ENERGY_COST_MAX) child_energy_cost_multiplicator = GENE_ENERGY_COST_MAX
+
             const newCreature = {
                 x: creature.x,
                 y: creature.y,
                 energy: START_ENERGY,
-                age: 0
+                age: 0,
+                generation: creature.generation + 1,
+
+                // genetic information
+                genes: {
+                    // multiplicator on cost of energy each tick
+                    energy_cost_multiplicator: child_energy_cost_multiplicator
+                }
+
+                
             };
             creatures.push(newCreature);
             creature.energy -= ENERGY_COST_FOR_REPRODUCTION;
@@ -123,7 +149,18 @@ function render() {
     ctx.clearRect(0, 0, canvas.width, canvas.height);
 
     for (const creature of creatures) {
-        ctx.fillStyle = CREATURE_COLOR;
+        // color is determined by the genes: min is green, max is red
+        const multiplier = creature.genes.energy_cost_multiplicator;
+
+        // Convert min-max gene range to 0-1
+        const t =
+            (multiplier - GENE_ENERGY_COST_MIN) /
+            (GENE_ENERGY_COST_MAX - GENE_ENERGY_COST_MIN);
+
+        const red = Math.round(255 * t);
+        const green = Math.round(255 * (1 - t));
+
+        ctx.fillStyle = `rgb(${red}, ${green}, 0)`;
 
         ctx.fillRect(
             creature.x * CELL_SIZE,
@@ -149,6 +186,9 @@ function updateStats() {
 
     let oldestCreature = 0;
     let totalEnergy = 0;
+    let totalEnergyCostGene = 0;
+    let lowerGeneration = Infinity;
+    let higherGeneration = 0;
 
     for (const creature of creatures) {
 
@@ -156,7 +196,16 @@ function updateStats() {
             oldestCreature = creature.age;
         }
 
+        if (creature.generation > higherGeneration) {
+            higherGeneration = creature.generation;
+        }
+
+        if (creature.generation < lowerGeneration) {
+            lowerGeneration = creature.generation;
+        }
+
         totalEnergy += creature.energy;
+        totalEnergyCostGene += creature.genes.energy_cost_multiplicator
     }
 
     const averageEnergy =
@@ -164,12 +213,20 @@ function updateStats() {
             ? Math.round(totalEnergy / creatures.length)
             : 0;
 
+    const averageEnergyCostGene =
+        creatures.length > 0
+            ? totalEnergyCostGene / creatures.length
+            : 0;
+
     stats.innerHTML = `
         Population: ${creatures.length}<br>
         Food: ${foods.length}<br>
         Oldest Creature: ${oldestCreature}<br>
-        Total Energy: ${totalEnergy}<br>
-        Average Energy: ${averageEnergy}
+        Total Energy: ${Math.round(totalEnergy)}<br>
+        Average Energy: ${averageEnergy}<br>
+        Lower Generation: ${lowerGeneration}<br>
+        Higher Generation: ${higherGeneration}<br>
+        Average Energy Cost Gene: ${averageEnergyCostGene.toFixed(5)}
     `;
 
     populationHistory.push(creatures.length);

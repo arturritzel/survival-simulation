@@ -43,6 +43,7 @@ function readConfig() {
         GENE_ENERGY_COST_MAX:       +document.getElementById("cfg-gene-max").value,
         ENERGY_FOR_REPRODUCTION:    +document.getElementById("cfg-repro-energy").value,
         MUTATION_RATE:              +document.getElementById("cfg-mutation-rate").value,
+        AGE_COST_FACTOR:            +document.getElementById("cfg-age-cost-factor").value,
     };
 }
 
@@ -106,7 +107,7 @@ function update() {
         creature.x = Math.max(0, Math.min(CFG.GRID_SIZE - 1, creature.x));
         creature.y = Math.max(0, Math.min(CFG.GRID_SIZE - 1, creature.y));
 
-        creature.energy -= CFG.ENERGY_LOSS_PER_TICK * creature.genes.energy_cost_multiplicator;
+        creature.energy -= CFG.ENERGY_LOSS_PER_TICK * creature.genes.energy_cost_multiplicator * (1 + creature.age / CFG.AGE_COST_FACTOR);
         creature.age++;
 
         const fi = findFoodAt(creature.x, creature.y);
@@ -174,12 +175,11 @@ function updateStats() {
         totalGene += c.genes.energy_cost_multiplicator;
     }
 
-    const avgEnergy = creatures.length > 0 ? Math.round(totalEnergy / creatures.length) : 0;
-    const avgGene   = creatures.length > 0 ? (totalGene / creatures.length).toFixed(4) : "—";
-    const extinct   = creatures.length === 0 ? `<br><span style="color:#c05050">† extinct</span>` : "";
+    const avgEnergy = Math.round(totalEnergy / creatures.length);
+    const avgGene   = (totalGene / creatures.length).toFixed(4);
 
     statsEl.innerHTML = `
-        Population: <span class="stat-val">${creatures.length}</span>${extinct}<br>
+        Population: <span class="stat-val">${creatures.length}</span><br>
         Food: <span class="stat-val">${foods.length}</span><br>
         Oldest: <span class="stat-val">${oldestAge}</span><br>
         Avg energy: <span class="stat-val">${avgEnergy}</span><br>
@@ -273,6 +273,12 @@ function startLoop() {
         if (!paused) {
             update();
             render();
+            if (creatures.length === 0) {
+                clearInterval(intervalId);
+                intervalId = null;
+                statsEl.innerHTML += `<br><span style="color:#c05050">† extinct</span>`;
+                return;
+            }
             updateStats();
         }
     }, 1000 / currentTps);

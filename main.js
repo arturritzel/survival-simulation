@@ -116,10 +116,13 @@ function update() {
         }
 
         if (creature.energy >= CFG.ENERGY_FOR_REPRODUCTION) {
-            let childGene = creature.genes.energy_cost_multiplicator + (Math.random() * 2 - 1) * CFG.MUTATION_RATE;
-            childGene = Math.max(CFG.GENE_ENERGY_COST_MIN, Math.min(CFG.GENE_ENERGY_COST_MAX, childGene));
-            newborns.push(makeCreature(creature.x, creature.y, CFG.START_ENERGY, creature.generation + 1, childGene));
-            creature.energy -= CFG.ENERGY_COST_FOR_REPRODUCTION;
+            const reproChance = (creature.energy - CFG.ENERGY_FOR_REPRODUCTION) / CFG.ENERGY_FOR_REPRODUCTION;
+            if (Math.random() < reproChance) {
+                let childGene = creature.genes.energy_cost_multiplicator + (Math.random() * 2 - 1) * CFG.MUTATION_RATE;
+                childGene = Math.max(CFG.GENE_ENERGY_COST_MIN, Math.min(CFG.GENE_ENERGY_COST_MAX, childGene));
+                newborns.push(makeCreature(creature.x, creature.y, CFG.START_ENERGY, creature.generation + 1, childGene));
+                creature.energy -= CFG.ENERGY_COST_FOR_REPRODUCTION;
+            }
         }
     }
 

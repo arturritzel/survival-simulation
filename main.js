@@ -7,20 +7,24 @@ let energyHistory = [];
 let foodHistory = [];
 let intervalId = null;
 let paused = false;
+let currentTps = 20;
 
 // ── DOM refs ─────────────────────────────────────────────────────
-const canvas      = document.getElementById("world");
-const ctx         = canvas.getContext("2d");
-const statsEl     = document.getElementById("stats");
-const inspectEl   = document.getElementById("inspect-panel");
-const pauseHint   = document.getElementById("pause-hint");
-const btnStart    = document.getElementById("btn-start");
-const btnPause    = document.getElementById("btn-pause");
-const canvasWrap  = document.getElementById("canvas-wrap");
-const crosshair   = document.getElementById("crosshair");
-const chH         = document.getElementById("ch-h");
-const chV         = document.getElementById("ch-v");
-const chCell      = document.getElementById("ch-cell");
+const canvas        = document.getElementById("world");
+const ctx           = canvas.getContext("2d");
+const statsEl       = document.getElementById("stats");
+const inspectEl     = document.getElementById("inspect-panel");
+const pauseHint     = document.getElementById("pause-hint");
+const btnStart      = document.getElementById("btn-start");
+const btnPause      = document.getElementById("btn-pause");
+const btnSlower     = document.getElementById("btn-slower");
+const btnFaster     = document.getElementById("btn-faster");
+const speedDisplay  = document.getElementById("speed-display");
+const canvasWrap    = document.getElementById("canvas-wrap");
+const crosshair     = document.getElementById("crosshair");
+const chH           = document.getElementById("ch-h");
+const chV           = document.getElementById("ch-v");
+const chCell        = document.getElementById("ch-cell");
 
 // ── Config helpers ────────────────────────────────────────────────
 function readConfig() {
@@ -251,6 +255,15 @@ canvasWrap.addEventListener("click", (e) => {
 });
 
 // ── Game loop ─────────────────────────────────────────────────────
+const TPS_MIN_EXP = 0;  // 2^0  = 1 tps
+const TPS_MAX_EXP = 10; // 2^10 = 1024 tps
+
+function updateSpeedDisplay() {
+    speedDisplay.textContent = currentTps + " tps";
+    btnSlower.disabled = currentTps <= Math.pow(2, TPS_MIN_EXP);
+    btnFaster.disabled = currentTps >= Math.pow(2, TPS_MAX_EXP);
+}
+
 function startLoop() {
     if (intervalId) clearInterval(intervalId);
     intervalId = setInterval(() => {
@@ -259,8 +272,18 @@ function startLoop() {
             render();
             updateStats();
         }
-    }, 1000 / CFG.TICKS_PER_SECOND);
+    }, 1000 / currentTps);
 }
+
+btnSlower.addEventListener("click", () => {
+    const exp = Math.log2(currentTps);
+    if (exp > TPS_MIN_EXP) { currentTps = Math.pow(2, exp - 1); startLoop(); updateSpeedDisplay(); }
+});
+
+btnFaster.addEventListener("click", () => {
+    const exp = Math.log2(currentTps);
+    if (exp < TPS_MAX_EXP) { currentTps = Math.pow(2, exp + 1); startLoop(); updateSpeedDisplay(); }
+});
 
 // ── Button wiring ─────────────────────────────────────────────────
 btnStart.addEventListener("click", () => {
@@ -268,12 +291,16 @@ btnStart.addEventListener("click", () => {
     paused = false;
 
     initSim();
+    currentTps = Math.pow(2, Math.round(Math.log2(CFG.TICKS_PER_SECOND)));
     render();
     updateStats();
     startLoop();
+    updateSpeedDisplay();
 
     btnStart.textContent = "↺ Restart";
     btnPause.style.display = "inline-block";
+    btnSlower.disabled = false;
+    btnFaster.disabled = false;
     btnPause.textContent = "⏸ Pause";
     btnPause.classList.remove("paused");
     inspectEl.innerHTML = "";

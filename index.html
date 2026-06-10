@@ -244,6 +244,39 @@
             text-align: center;
             display: none;
         }
+
+        /* ── Chart ── */
+        #chart-wrap {
+            display: none;
+            flex-direction: column;
+            gap: 6px;
+        }
+
+        #chart {
+            display: block;
+            background: #1a1a1a;
+            border: 1px solid #2a2a2a;
+        }
+
+        #chart-legend {
+            display: flex;
+            gap: 16px;
+            justify-content: center;
+        }
+
+        .legend-item {
+            display: flex;
+            align-items: center;
+            gap: 5px;
+            font-size: 11px;
+            color: #888;
+        }
+
+        .legend-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+        }
     </style>
 </head>
 <body>
@@ -337,6 +370,15 @@
         <div id="stats">Not started</div>
         <div id="pause-hint">Click a cell to inspect</div>
         <div id="inspect-panel"></div>
+    </div>
+</div>
+
+<div id="chart-wrap">
+    <canvas id="chart"></canvas>
+    <div id="chart-legend">
+        <span class="legend-item"><span class="legend-dot" style="background:#4caf50"></span>population</span>
+        <span class="legend-item"><span class="legend-dot" style="background:#888"></span>food</span>
+        <span class="legend-item"><span class="legend-dot" style="background:#e0a020"></span>total energy</span>
     </div>
 </div>
 

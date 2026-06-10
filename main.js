@@ -8,10 +8,15 @@ let foodHistory = [];
 let intervalId = null;
 let paused = false;
 let currentTps = 20;
+let tick = 0;
+const MAX_HISTORY = 1000;
 
 // ── DOM refs ─────────────────────────────────────────────────────
 const canvas        = document.getElementById("world");
 const ctx           = canvas.getContext("2d");
+const chartCanvas   = document.getElementById("chart");
+const chartCtx      = chartCanvas.getContext("2d");
+const chartWrap     = document.getElementById("chart-wrap");
 const statsEl       = document.getElementById("stats");
 const inspectEl     = document.getElementById("inspect-panel");
 const pauseHint     = document.getElementById("pause-hint");
@@ -55,6 +60,12 @@ function initSim() {
     canvas.width  = CFG.GRID_SIZE * CFG.CELL_SIZE;
     canvas.height = CFG.GRID_SIZE * CFG.CELL_SIZE;
 
+    chartCanvas.width  = CFG.GRID_SIZE * CFG.CELL_SIZE;
+    chartCanvas.height = 120;
+    chartWrap.style.display = "flex";
+
+    tick = 0;
+
     creatures = [];
     foods = [];
     populationHistory = [];
@@ -95,6 +106,7 @@ function findFoodAt(x, y) {
 }
 
 function update() {
+    tick++;
     const newborns = [];
 
     for (const creature of creatures) {
@@ -179,6 +191,7 @@ function updateStats() {
     const avgGene   = (totalGene / creatures.length).toFixed(4);
 
     statsEl.innerHTML = `
+        Tick: <span class="stat-val">${tick}</span><br>
         Population: <span class="stat-val">${creatures.length}</span><br>
         Food: <span class="stat-val">${foods.length}</span><br>
         Oldest: <span class="stat-val">${oldestAge}</span><br>
@@ -187,13 +200,48 @@ function updateStats() {
         Avg gene: <span class="stat-val">${avgGene}</span>
     `;
 
-    const MAX_HISTORY = 1000;
     populationHistory.push(creatures.length);
     energyHistory.push(totalEnergy);
     foodHistory.push(foods.length);
-    if (populationHistory.length > MAX_HISTORY) populationHistory.shift();
-    if (energyHistory.length > MAX_HISTORY) energyHistory.shift();
-    if (foodHistory.length > MAX_HISTORY) foodHistory.shift();
+}
+function renderChart() {
+    const W = chartCanvas.width;
+    const H = chartCanvas.height;
+    const PAD = 6;
+    const n = populationHistory.length;
+    if (n < 2) return;
+
+    chartCtx.clearRect(0, 0, W, H);
+
+    // normalise each series independently to 0-1
+    function normalise(arr) {
+        const max = Math.max(...arr);
+        if (max === 0) return arr.map(() => 0);
+        return arr.map(v => v / max);
+    }
+
+    const series = [
+        { data: normalise(populationHistory), color: "#4caf50" },
+        { data: normalise(foodHistory),       color: "#888888" },
+        { data: normalise(energyHistory),     color: "#e0a020" },
+    ];
+
+    for (const { data, color } of series) {
+        chartCtx.beginPath();
+        chartCtx.strokeStyle = color;
+        chartCtx.lineWidth = 1.5;
+
+        const cols = W - PAD * 2;
+        const step = Math.max(1, Math.floor(data.length / cols));
+
+        for (let i = 0; i < data.length; i += step) {
+            const x = PAD + (i / (data.length - 1)) * (W - PAD * 2);
+            const y = PAD + (1 - data[i]) * (H - PAD * 2);
+            i === 0 ? chartCtx.moveTo(x, y) : chartCtx.lineTo(x, y);
+        }
+
+        chartCtx.stroke();
+    }
 }
 
 // ── Inspect panel (pause mode) ────────────────────────────────────
@@ -277,9 +325,11 @@ function startLoop() {
                 clearInterval(intervalId);
                 intervalId = null;
                 statsEl.innerHTML += `<br><span style="color:#c05050">† extinct</span>`;
+                renderChart();
                 return;
             }
             updateStats();
+            renderChart();
         }
     }, 1000 / currentTps);
 }

@@ -1,270 +1,302 @@
-const GRID_SIZE = 50;
-const CELL_SIZE = 12;
+// ── Runtime state ────────────────────────────────────────────────
+let CFG = {};
+let creatures = [];
+let foods = [];
+let populationHistory = [];
+let energyHistory = [];
+let foodHistory = [];
+let intervalId = null;
+let paused = false;
 
-const TICKS_PER_SECOND = 50;
+// ── DOM refs ─────────────────────────────────────────────────────
+const canvas      = document.getElementById("world");
+const ctx         = canvas.getContext("2d");
+const statsEl     = document.getElementById("stats");
+const inspectEl   = document.getElementById("inspect-panel");
+const pauseHint   = document.getElementById("pause-hint");
+const btnStart    = document.getElementById("btn-start");
+const btnPause    = document.getElementById("btn-pause");
+const canvasWrap  = document.getElementById("canvas-wrap");
+const crosshair   = document.getElementById("crosshair");
+const chH         = document.getElementById("ch-h");
+const chV         = document.getElementById("ch-v");
+const chCell      = document.getElementById("ch-cell");
 
-const CREATURES_COUNT = 10;
-const START_FOOD_COUNT = 300;
-const FOOD_CREATION_RATE = 0.5;
+// ── Config helpers ────────────────────────────────────────────────
+function readConfig() {
+    return {
+        GRID_SIZE:                  +document.getElementById("cfg-grid-size").value,
+        CELL_SIZE:                  +document.getElementById("cfg-cell-size").value,
+        TICKS_PER_SECOND:           +document.getElementById("cfg-ticks-per-second").value,
+        CREATURES_COUNT:            +document.getElementById("cfg-creatures-count").value,
+        START_FOOD_COUNT:           +document.getElementById("cfg-start-food").value,
+        FOOD_CREATION_RATE:         +document.getElementById("cfg-food-rate").value,
+        START_ENERGY:               +document.getElementById("cfg-start-energy").value,
+        MAX_ENERGY:                 +document.getElementById("cfg-max-energy").value,
+        ENERGY_GAIN_FROM_FOOD:      +document.getElementById("cfg-energy-food").value,
+        ENERGY_LOSS_PER_TICK:       +document.getElementById("cfg-energy-loss").value,
+        GENE_ENERGY_COST_MIN:       +document.getElementById("cfg-gene-min").value,
+        GENE_ENERGY_COST_MAX:       +document.getElementById("cfg-gene-max").value,
+        ENERGY_FOR_REPRODUCTION:    +document.getElementById("cfg-repro-energy").value,
+        MUTATION_RATE:              +document.getElementById("cfg-mutation-rate").value,
+    };
+}
 
-const START_ENERGY = 100;
-const MAX_ENERGY = 550;
+// ── Initialisation ────────────────────────────────────────────────
+function initSim() {
+    CFG = readConfig();
+    CFG.ENERGY_COST_FOR_REPRODUCTION = CFG.ENERGY_FOR_REPRODUCTION / 2;
 
-const ENERGY_GAIN_FROM_FOOD = 50;
-const ENERGY_LOSS_PER_TICK = 1;
+    canvas.width  = CFG.GRID_SIZE * CFG.CELL_SIZE;
+    canvas.height = CFG.GRID_SIZE * CFG.CELL_SIZE;
 
-const GENE_ENERGY_COST_MIN = 0.75
-const GENE_ENERGY_COST_MAX = 1.25
+    creatures = [];
+    foods = [];
+    populationHistory = [];
+    energyHistory = [];
+    foodHistory = [];
 
-const ENERGY_FOR_REPRODUCTION = 500;
-const ENERGY_COST_FOR_REPRODUCTION = ENERGY_FOR_REPRODUCTION / 2;
+    for (let i = 0; i < CFG.CREATURES_COUNT; i++) {
+        creatures.push(makeCreature(
+            Math.floor(Math.random() * CFG.GRID_SIZE),
+            Math.floor(Math.random() * CFG.GRID_SIZE),
+            CFG.START_ENERGY,
+            0,
+            Math.random() * (CFG.GENE_ENERGY_COST_MAX - CFG.GENE_ENERGY_COST_MIN) + CFG.GENE_ENERGY_COST_MIN
+        ));
+    }
 
-const GENE_MUTATION_RATE = 0.000001
+    for (let i = 0; i < CFG.START_FOOD_COUNT; i++) {
+        foods.push({
+            x: Math.floor(Math.random() * CFG.GRID_SIZE),
+            y: Math.floor(Math.random() * CFG.GRID_SIZE)
+        });
+    }
+}
 
-// const CREATURE_COLOR = "#4da3ff"; // obsolete - now we use the genes to determine the color
-const FOOD_COLOR = "gray";
-
-const canvas = document.getElementById("world");
-const stats = document.getElementById("stats");
-const ctx = canvas.getContext("2d");
-
-canvas.width = GRID_SIZE * CELL_SIZE;
-canvas.height = GRID_SIZE * CELL_SIZE;
-
-const creatures = [];
-const foods = [];
-
-const populationHistory = [];
-const energyHistory = [];
-const foodHistory = [];
-
-// Create X creatures
-for (let i = 0; i < CREATURES_COUNT; i++) {
-    creatures.push({
-        x: Math.floor(Math.random() * GRID_SIZE),
-        y: Math.floor(Math.random() * GRID_SIZE),
-
-        energy: START_ENERGY,
+function makeCreature(x, y, energy, generation, energyCostGene) {
+    return {
+        x, y,
+        energy,
         age: 0,
-        generation: 0,
-
-        // genetic information
-        genes: {
-            // multiplicator on cost of energy each tick
-            energy_cost_multiplicator: Math.random() * (GENE_ENERGY_COST_MAX - GENE_ENERGY_COST_MIN) + GENE_ENERGY_COST_MIN,
-        }
-    });
+        generation,
+        genes: { energy_cost_multiplicator: energyCostGene }
+    };
 }
 
-// Create X foods
-for (let i = 0; i < START_FOOD_COUNT; i++) {
-    foods.push({
-        x: Math.floor(Math.random() * GRID_SIZE),
-        y: Math.floor(Math.random() * GRID_SIZE)
-    });
-}
-
+// ── Sim logic ─────────────────────────────────────────────────────
 function findFoodAt(x, y) {
-    return foods.findIndex(
-        food => food.x === x && food.y === y
-    );
+    return foods.findIndex(f => f.x === x && f.y === y);
 }
 
 function update() {
-
     const newborns = [];
 
     for (const creature of creatures) {
+        const dir = Math.floor(Math.random() * 4);
+        if (dir === 0) creature.y--;
+        else if (dir === 1) creature.y++;
+        else if (dir === 2) creature.x--;
+        else creature.x++;
 
-        // Move creature
-        const direction = Math.floor(Math.random() * 4);
+        creature.x = Math.max(0, Math.min(CFG.GRID_SIZE - 1, creature.x));
+        creature.y = Math.max(0, Math.min(CFG.GRID_SIZE - 1, creature.y));
 
-        switch (direction) {
-            case 0: creature.y--; break;
-            case 1: creature.y++; break;
-            case 2: creature.x--; break;
-            case 3: creature.x++; break;
-        }
-
-        // Keep inside world
-        creature.x = Math.max(0, Math.min(GRID_SIZE - 1, creature.x));
-        creature.y = Math.max(0, Math.min(GRID_SIZE - 1, creature.y));
-
-        // Lose energy
-        creature.energy -= ENERGY_LOSS_PER_TICK * creature.genes.energy_cost_multiplicator;
+        creature.energy -= CFG.ENERGY_LOSS_PER_TICK * creature.genes.energy_cost_multiplicator;
         creature.age++;
 
-        // Check for food
-        const foodIndex = findFoodAt(creature.x, creature.y);
-
-        if (foodIndex !== -1) {
-            creature.energy += ENERGY_GAIN_FROM_FOOD;
-            if (creature.energy > MAX_ENERGY) {
-                creature.energy = MAX_ENERGY;
-            }
-            foods.splice(foodIndex, 1);
+        const fi = findFoodAt(creature.x, creature.y);
+        if (fi !== -1) {
+            creature.energy = Math.min(CFG.MAX_ENERGY, creature.energy + CFG.ENERGY_GAIN_FROM_FOOD);
+            foods.splice(fi, 1);
         }
 
-        // Check for reproduction
-        if (creature.energy >= ENERGY_FOR_REPRODUCTION) {
-            let child_energy_cost_multiplicator = creature.genes.energy_cost_multiplicator + ((Math.random() * 2 - 1) * GENE_MUTATION_RATE)
-            if (child_energy_cost_multiplicator < GENE_ENERGY_COST_MIN) child_energy_cost_multiplicator = GENE_ENERGY_COST_MIN
-            if (child_energy_cost_multiplicator > GENE_ENERGY_COST_MAX) child_energy_cost_multiplicator = GENE_ENERGY_COST_MAX
-
-            const newCreature = {
-                x: creature.x,
-                y: creature.y,
-                energy: START_ENERGY,
-                age: 0,
-                generation: creature.generation + 1,
-
-                // genetic information
-                genes: {
-                    // multiplicator on cost of energy each tick
-                    energy_cost_multiplicator: child_energy_cost_multiplicator
-                }
-
-                
-            };
-            newborns.push(newCreature);
-            creature.energy -= ENERGY_COST_FOR_REPRODUCTION;
+        if (creature.energy >= CFG.ENERGY_FOR_REPRODUCTION) {
+            let childGene = creature.genes.energy_cost_multiplicator + (Math.random() * 2 - 1) * CFG.MUTATION_RATE;
+            childGene = Math.max(CFG.GENE_ENERGY_COST_MIN, Math.min(CFG.GENE_ENERGY_COST_MAX, childGene));
+            newborns.push(makeCreature(creature.x, creature.y, CFG.START_ENERGY, creature.generation + 1, childGene));
+            creature.energy -= CFG.ENERGY_COST_FOR_REPRODUCTION;
         }
-
     }
 
     creatures.push(...newborns);
 
-    // Remove dead creatures
     for (let i = creatures.length - 1; i >= 0; i--) {
-
-        if (creatures[i].energy <= 0) {
-            creatures.splice(i, 1);
-        }
+        if (creatures[i].energy <= 0) creatures.splice(i, 1);
     }
 
-    // Create new food if random number is less than FOOD_CREATION_RATE (no duplicates in the same position)
-    if (Math.random() < FOOD_CREATION_RATE) {
-        const newFood = {
-            x: Math.floor(Math.random() * GRID_SIZE),
-            y: Math.floor(Math.random() * GRID_SIZE)
+    if (Math.random() < CFG.FOOD_CREATION_RATE) {
+        const nf = {
+            x: Math.floor(Math.random() * CFG.GRID_SIZE),
+            y: Math.floor(Math.random() * CFG.GRID_SIZE)
         };
-        if (!foods.some(food => food.x === newFood.x && food.y === newFood.y)) {
-            foods.push(newFood);
-        }
+        if (!foods.some(f => f.x === nf.x && f.y === nf.y)) foods.push(nf);
     }
+}
+
+// ── Rendering ─────────────────────────────────────────────────────
+function creatureColor(gene) {
+    const t = (gene - CFG.GENE_ENERGY_COST_MIN) / (CFG.GENE_ENERGY_COST_MAX - CFG.GENE_ENERGY_COST_MIN);
+    return `rgb(${Math.round(255 * t)}, ${Math.round(255 * (1 - t))}, 0)`;
 }
 
 function render() {
     ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-    for (const creature of creatures) {
-        // color is determined by the genes: min is green, max is red
-        const multiplier = creature.genes.energy_cost_multiplicator;
-
-        // Convert min-max gene range to 0-1
-        const t =
-            (multiplier - GENE_ENERGY_COST_MIN) /
-            (GENE_ENERGY_COST_MAX - GENE_ENERGY_COST_MIN);
-
-        const red = Math.round(255 * t);
-        const green = Math.round(255 * (1 - t));
-
-        ctx.fillStyle = `rgb(${red}, ${green}, 0)`;
-
-        ctx.fillRect(
-            creature.x * CELL_SIZE,
-            creature.y * CELL_SIZE,
-            CELL_SIZE,
-            CELL_SIZE
-        );
+    for (const food of foods) {
+        ctx.fillStyle = "#666";
+        ctx.fillRect(food.x * CFG.CELL_SIZE, food.y * CFG.CELL_SIZE, CFG.CELL_SIZE, CFG.CELL_SIZE);
     }
 
-    for (const food of foods) {
-        ctx.fillStyle = FOOD_COLOR;
-
-        ctx.fillRect(
-            food.x * CELL_SIZE,
-            food.y * CELL_SIZE,
-            CELL_SIZE,
-            CELL_SIZE
-        );
+    for (const creature of creatures) {
+        ctx.fillStyle = creatureColor(creature.genes.energy_cost_multiplicator);
+        ctx.fillRect(creature.x * CFG.CELL_SIZE, creature.y * CFG.CELL_SIZE, CFG.CELL_SIZE, CFG.CELL_SIZE);
     }
 }
 
+// ── Stats panel ───────────────────────────────────────────────────
 function updateStats() {
+    let oldestAge = 0, totalEnergy = 0, totalGene = 0;
+    let minGen = Infinity, maxGen = 0;
 
-    let oldestCreature = 0;
-    let totalEnergy = 0;
-    let totalEnergyCostGene = 0;
-    let lowerGeneration = Infinity;
-    let higherGeneration = 0;
-
-    for (const creature of creatures) {
-
-        if (creature.age > oldestCreature) {
-            oldestCreature = creature.age;
-        }
-
-        if (creature.generation > higherGeneration) {
-            higherGeneration = creature.generation;
-        }
-
-        if (creature.generation < lowerGeneration) {
-            lowerGeneration = creature.generation;
-        }
-
-        totalEnergy += creature.energy;
-        totalEnergyCostGene += creature.genes.energy_cost_multiplicator
+    for (const c of creatures) {
+        if (c.age > oldestAge) oldestAge = c.age;
+        if (c.generation > maxGen) maxGen = c.generation;
+        if (c.generation < minGen) minGen = c.generation;
+        totalEnergy += c.energy;
+        totalGene += c.genes.energy_cost_multiplicator;
     }
 
-    const averageEnergy =
-        creatures.length > 0
-            ? Math.round(totalEnergy / creatures.length)
-            : 0;
+    const avgEnergy = creatures.length > 0 ? Math.round(totalEnergy / creatures.length) : 0;
+    const avgGene   = creatures.length > 0 ? (totalGene / creatures.length).toFixed(4) : "—";
+    const extinct   = creatures.length === 0 ? `<br><span style="color:#c05050">† extinct</span>` : "";
 
-    const averageEnergyCostGene =
-        creatures.length > 0
-            ? totalEnergyCostGene / creatures.length
-            : 0;
-
-    stats.innerHTML = `
-        Population: ${creatures.length}<br>
-        Food: ${foods.length}<br>
-        Oldest Creature: ${oldestCreature}<br>
-        Total Energy: ${Math.round(totalEnergy)}<br>
-        Average Energy: ${averageEnergy}<br>
-        Lower Generation: ${lowerGeneration}<br>
-        Higher Generation: ${higherGeneration}<br>
-        Average Energy Cost Gene: ${averageEnergyCostGene.toFixed(5)}
+    statsEl.innerHTML = `
+        Population: <span class="stat-val">${creatures.length}</span>${extinct}<br>
+        Food: <span class="stat-val">${foods.length}</span><br>
+        Oldest: <span class="stat-val">${oldestAge}</span><br>
+        Avg energy: <span class="stat-val">${avgEnergy}</span><br>
+        Gen range: <span class="stat-val">${minGen === Infinity ? 0 : minGen}–${maxGen}</span><br>
+        Avg gene: <span class="stat-val">${avgGene}</span>
     `;
 
+    const MAX_HISTORY = 1000;
     populationHistory.push(creatures.length);
     energyHistory.push(totalEnergy);
     foodHistory.push(foods.length);
-
-    const MAX_HISTORY = 1000;
-
-    if (populationHistory.length > MAX_HISTORY) {
-        populationHistory.shift();
-    }
-
-    if (energyHistory.length > MAX_HISTORY) {
-        energyHistory.shift();
-    }
-
-    if (foodHistory.length > MAX_HISTORY) {
-        foodHistory.shift();
-    }
+    if (populationHistory.length > MAX_HISTORY) populationHistory.shift();
+    if (energyHistory.length > MAX_HISTORY) energyHistory.shift();
+    if (foodHistory.length > MAX_HISTORY) foodHistory.shift();
 }
 
-function gameLoop() {
-    
-    setInterval(() => {
-        update();
+// ── Inspect panel (pause mode) ────────────────────────────────────
+function inspectCell(gx, gy) {
+    const cellCreatures = creatures.filter(c => c.x === gx && c.y === gy);
+    const hasFood = foods.some(f => f.x === gx && f.y === gy);
+
+    let html = `<div class="inspect-title">Inspect</div>`;
+    html += `<div class="inspect-coord">Cell (${gx}, ${gy})</div>`;
+
+    if (!hasFood && cellCreatures.length === 0) {
+        html += `<div class="empty-cell">Empty cell</div>`;
+    }
+
+    if (hasFood) {
+        html += `<div><span class="food-dot"></span>Food</div>`;
+    }
+
+    for (const c of cellCreatures) {
+        const color = creatureColor(c.genes.energy_cost_multiplicator);
+        html += `
+        <div class="creature-entry">
+            <div><span class="creature-color-dot" style="background:${color}"></span>Creature</div>
+            <div><span class="entry-label">Energy </span><span class="entry-val">${Math.round(c.energy)}</span></div>
+            <div><span class="entry-label">Age    </span><span class="entry-val">${c.age}</span></div>
+            <div><span class="entry-label">Gen    </span><span class="entry-val">${c.generation}</span></div>
+            <div><span class="entry-label">Gene   </span><span class="entry-val">${c.genes.energy_cost_multiplicator.toFixed(4)}</span></div>
+        </div>`;
+    }
+
+    inspectEl.innerHTML = html;
+}
+
+// ── Crosshair on canvas hover ─────────────────────────────────────
+canvasWrap.addEventListener("mousemove", (e) => {
+    if (!paused) return;
+    const rect = canvas.getBoundingClientRect();
+    const px = e.clientX - rect.left;
+    const py = e.clientY - rect.top;
+    const gx = Math.floor(px / CFG.CELL_SIZE);
+    const gy = Math.floor(py / CFG.CELL_SIZE);
+
+    crosshair.style.display = "block";
+    chH.style.top  = (gy * CFG.CELL_SIZE + CFG.CELL_SIZE / 2) + "px";
+    chV.style.left = (gx * CFG.CELL_SIZE + CFG.CELL_SIZE / 2) + "px";
+    chCell.style.left   = (gx * CFG.CELL_SIZE) + "px";
+    chCell.style.top    = (gy * CFG.CELL_SIZE) + "px";
+    chCell.style.width  = CFG.CELL_SIZE + "px";
+    chCell.style.height = CFG.CELL_SIZE + "px";
+});
+
+canvasWrap.addEventListener("mouseleave", () => {
+    crosshair.style.display = "none";
+});
+
+canvasWrap.addEventListener("click", (e) => {
+    if (!paused) return;
+    const rect = canvas.getBoundingClientRect();
+    const gx = Math.floor((e.clientX - rect.left)  / CFG.CELL_SIZE);
+    const gy = Math.floor((e.clientY - rect.top)    / CFG.CELL_SIZE);
+    inspectCell(gx, gy);
+});
+
+// ── Game loop ─────────────────────────────────────────────────────
+function startLoop() {
+    if (intervalId) clearInterval(intervalId);
+    intervalId = setInterval(() => {
+        if (!paused) {
+            update();
+            render();
+            updateStats();
+        }
+    }, 1000 / CFG.TICKS_PER_SECOND);
+}
+
+// ── Button wiring ─────────────────────────────────────────────────
+btnStart.addEventListener("click", () => {
+    if (intervalId) clearInterval(intervalId);
+    paused = false;
+
+    initSim();
+    render();
+    updateStats();
+    startLoop();
+
+    btnStart.textContent = "↺ Restart";
+    btnPause.style.display = "inline-block";
+    btnPause.textContent = "⏸ Pause";
+    btnPause.classList.remove("paused");
+    inspectEl.innerHTML = "";
+    pauseHint.style.display = "none";
+    canvasWrap.classList.remove("paused");
+    crosshair.style.display = "none";
+});
+
+btnPause.addEventListener("click", () => {
+    paused = !paused;
+    if (paused) {
+        btnPause.textContent = "▶ Resume";
+        btnPause.classList.add("paused");
+        canvasWrap.classList.add("paused");
+        pauseHint.style.display = "block";
+        // render one final frame to freeze the view
         render();
-        updateStats();
-    }, 1000 / TICKS_PER_SECOND);
-
-}
-
-gameLoop();
+    } else {
+        btnPause.textContent = "⏸ Pause";
+        btnPause.classList.remove("paused");
+        canvasWrap.classList.remove("paused");
+        pauseHint.style.display = "none";
+        inspectEl.innerHTML = "";
+        crosshair.style.display = "none";
+    }
+});

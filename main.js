@@ -49,6 +49,9 @@ function readConfig() {
         ENERGY_FOR_REPRODUCTION:    +document.getElementById("cfg-repro-energy").value,
         MUTATION_RATE:              +document.getElementById("cfg-mutation-rate").value,
         AGE_COST_FACTOR:            +document.getElementById("cfg-age-cost-factor").value,
+        REPRO_COOLDOWN:             +document.getElementById("cfg-repro-cooldown").value,
+        CHILD_DEATH_RATE:           +document.getElementById("cfg-child-death-rate").value,
+        PARENT_DEATH_ON_REPRO_RATE: +document.getElementById("cfg-parent-death-rate").value,
     };
 }
 
@@ -96,6 +99,7 @@ function makeCreature(x, y, energy, generation, energyCostGene) {
         energy,
         age: 0,
         generation,
+        lastReproducedAt: -Infinity,
         genes: { energy_cost_multiplicator: energyCostGene }
     };
 }
@@ -128,13 +132,19 @@ function update() {
             foods.splice(fi, 1);
         }
 
-        if (creature.energy >= CFG.ENERGY_FOR_REPRODUCTION) {
+        if (creature.energy >= CFG.ENERGY_FOR_REPRODUCTION && (tick - creature.lastReproducedAt) >= CFG.REPRO_COOLDOWN) {
             const reproChance = (creature.energy - CFG.ENERGY_FOR_REPRODUCTION) / CFG.ENERGY_FOR_REPRODUCTION;
             if (Math.random() < reproChance) {
                 let childGene = creature.genes.energy_cost_multiplicator + (Math.random() * 2 - 1) * CFG.MUTATION_RATE;
                 childGene = Math.max(CFG.GENE_ENERGY_COST_MIN, Math.min(CFG.GENE_ENERGY_COST_MAX, childGene));
-                newborns.push(makeCreature(creature.x, creature.y, CFG.START_ENERGY, creature.generation + 1, childGene));
+                if (Math.random() >= CFG.CHILD_DEATH_RATE) {
+                    newborns.push(makeCreature(creature.x, creature.y, CFG.START_ENERGY, creature.generation + 1, childGene));
+                }
                 creature.energy -= CFG.ENERGY_COST_FOR_REPRODUCTION;
+                creature.lastReproducedAt = tick;
+                if (Math.random() < CFG.PARENT_DEATH_ON_REPRO_RATE) {
+                    creature.energy = 0;
+                }
             }
         }
     }
@@ -269,6 +279,7 @@ function inspectCell(gx, gy) {
             <div><span class="entry-label">Age    </span><span class="entry-val">${c.age}</span></div>
             <div><span class="entry-label">Gen    </span><span class="entry-val">${c.generation}</span></div>
             <div><span class="entry-label">Gene   </span><span class="entry-val">${c.genes.energy_cost_multiplicator.toFixed(4)}</span></div>
+            <div><span class="entry-label">Last repro </span><span class="entry-val">${c.lastReproducedAt === -Infinity ? "never" : c.lastReproducedAt}</span></div>
         </div>`;
     }
 

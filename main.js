@@ -11,6 +11,21 @@ let currentTps = 20;
 let tick = 0;
 const MAX_HISTORY = 1000;
 
+let peakPop = 0, peakFood = 0, peakEnergy = 0;
+
+// ── Seeded RNG (mulberry32) ───────────────────────────────────────
+let _rng;
+function seedRNG(seed) {
+    let s = seed >>> 0;
+    _rng = () => {
+        s |= 0; s = s + 0x6D2B79F5 | 0;
+        let t = Math.imul(s ^ s >>> 15, 1 | s);
+        t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+        return ((t ^ t >>> 14) >>> 0) / 4294967296;
+    };
+}
+function rand() { return _rng(); }
+
 // ── DOM refs ─────────────────────────────────────────────────────
 const canvas        = document.getElementById("world");
 const ctx           = canvas.getContext("2d");
@@ -30,6 +45,14 @@ const crosshair     = document.getElementById("crosshair");
 const chH           = document.getElementById("ch-h");
 const chV           = document.getElementById("ch-v");
 const chCell        = document.getElementById("ch-cell");
+const tooltip       = document.getElementById("tooltip");
+const dragRect      = document.getElementById("drag-rect");
+const peakPopEl     = document.getElementById("peak-pop");
+const peakFoodEl    = document.getElementById("peak-food");
+const peakEnergyEl  = document.getElementById("peak-energy");
+const presetSelect  = document.getElementById("cfg-preset");
+const seedInput     = document.getElementById("cfg-seed");
+const btnRandomSeed = document.getElementById("btn-random-seed");
 
 // ── Config helpers ────────────────────────────────────────────────
 function readConfig() {
@@ -60,6 +83,12 @@ function initSim() {
     CFG = readConfig();
     CFG.ENERGY_COST_FOR_REPRODUCTION = CFG.ENERGY_FOR_REPRODUCTION / 2;
 
+    seedRNG(+seedInput.value || 42);
+    peakPop = 0; peakFood = 0; peakEnergy = 0;
+    peakPopEl.textContent = "";
+    peakFoodEl.textContent = "";
+    peakEnergyEl.textContent = "";
+
     canvas.width  = CFG.GRID_SIZE * CFG.CELL_SIZE;
     canvas.height = CFG.GRID_SIZE * CFG.CELL_SIZE;
 
@@ -77,18 +106,18 @@ function initSim() {
 
     for (let i = 0; i < CFG.CREATURES_COUNT; i++) {
         creatures.push(makeCreature(
-            Math.floor(Math.random() * CFG.GRID_SIZE),
-            Math.floor(Math.random() * CFG.GRID_SIZE),
+            Math.floor(rand() * CFG.GRID_SIZE),
+            Math.floor(rand() * CFG.GRID_SIZE),
             CFG.START_ENERGY,
             0,
-            Math.random() * (CFG.GENE_ENERGY_COST_MAX - CFG.GENE_ENERGY_COST_MIN) + CFG.GENE_ENERGY_COST_MIN
+            rand() * (CFG.GENE_ENERGY_COST_MAX - CFG.GENE_ENERGY_COST_MIN) + CFG.GENE_ENERGY_COST_MIN
         ));
     }
 
     for (let i = 0; i < CFG.START_FOOD_COUNT; i++) {
         foods.push({
-            x: Math.floor(Math.random() * CFG.GRID_SIZE),
-            y: Math.floor(Math.random() * CFG.GRID_SIZE)
+            x: Math.floor(rand() * CFG.GRID_SIZE),
+            y: Math.floor(rand() * CFG.GRID_SIZE)
         });
     }
 }
@@ -114,7 +143,7 @@ function update() {
     const newborns = [];
 
     for (const creature of creatures) {
-        const dir = Math.floor(Math.random() * 4);
+        const dir = Math.floor(rand() * 4);
         if (dir === 0) creature.y--;
         else if (dir === 1) creature.y++;
         else if (dir === 2) creature.x--;
@@ -134,15 +163,15 @@ function update() {
 
         if (creature.energy >= CFG.ENERGY_FOR_REPRODUCTION && (tick - creature.lastReproducedAt) >= CFG.REPRO_COOLDOWN) {
             const reproChance = (creature.energy - CFG.ENERGY_FOR_REPRODUCTION) / CFG.ENERGY_FOR_REPRODUCTION;
-            if (Math.random() < reproChance) {
-                let childGene = creature.genes.energy_cost_multiplicator + (Math.random() * 2 - 1) * CFG.MUTATION_RATE;
+            if (rand() < reproChance) {
+                let childGene = creature.genes.energy_cost_multiplicator + (rand() * 2 - 1) * CFG.MUTATION_RATE;
                 childGene = Math.max(CFG.GENE_ENERGY_COST_MIN, Math.min(CFG.GENE_ENERGY_COST_MAX, childGene));
-                if (Math.random() >= CFG.CHILD_DEATH_RATE) {
+                if (rand() >= CFG.CHILD_DEATH_RATE) {
                     newborns.push(makeCreature(creature.x, creature.y, CFG.START_ENERGY, creature.generation + 1, childGene));
                 }
                 creature.energy -= CFG.ENERGY_COST_FOR_REPRODUCTION;
                 creature.lastReproducedAt = tick;
-                if (Math.random() < CFG.PARENT_DEATH_ON_REPRO_RATE) {
+                if (rand() < CFG.PARENT_DEATH_ON_REPRO_RATE) {
                     creature.energy = 0;
                 }
             }
@@ -155,10 +184,10 @@ function update() {
         if (creatures[i].energy <= 0) creatures.splice(i, 1);
     }
 
-    if (Math.random() < CFG.FOOD_CREATION_RATE) {
+    if (rand() < CFG.FOOD_CREATION_RATE) {
         const nf = {
-            x: Math.floor(Math.random() * CFG.GRID_SIZE),
-            y: Math.floor(Math.random() * CFG.GRID_SIZE)
+            x: Math.floor(rand() * CFG.GRID_SIZE),
+            y: Math.floor(rand() * CFG.GRID_SIZE)
         };
         if (!foods.some(f => f.x === nf.x && f.y === nf.y)) foods.push(nf);
     }
@@ -213,6 +242,10 @@ function updateStats() {
     populationHistory.push(creatures.length);
     energyHistory.push(totalEnergy);
     foodHistory.push(foods.length);
+
+    if (creatures.length > peakPop)  { peakPop    = creatures.length; peakPopEl.textContent    = `peak: ${peakPop}`; }
+    if (foods.length    > peakFood)  { peakFood   = foods.length;     peakFoodEl.textContent   = `peak: ${peakFood}`; }
+    if (totalEnergy     > peakEnergy){ peakEnergy = totalEnergy;      peakEnergyEl.textContent = `peak: ${Math.round(peakEnergy)}`; }
 }
 function renderChart() {
     const W = chartCanvas.width;
@@ -223,7 +256,17 @@ function renderChart() {
 
     chartCtx.clearRect(0, 0, W, H);
 
-    // normalise each series independently to 0-1
+    // gridlines at 0.25 / 0.5 / 0.75
+    chartCtx.strokeStyle = "rgba(255,255,255,0.06)";
+    chartCtx.lineWidth = 1;
+    for (const lvl of [0.25, 0.5, 0.75]) {
+        const y = PAD + (1 - lvl) * (H - PAD * 2);
+        chartCtx.beginPath();
+        chartCtx.moveTo(PAD, y);
+        chartCtx.lineTo(W - PAD, y);
+        chartCtx.stroke();
+    }
+
     function normalise(arr) {
         const max = Math.max(...arr);
         if (max === 0) return arr.map(() => 0);
@@ -252,6 +295,14 @@ function renderChart() {
 
         chartCtx.stroke();
     }
+
+    // current tick marker at right edge
+    chartCtx.strokeStyle = "rgba(255,255,255,0.2)";
+    chartCtx.lineWidth = 1;
+    chartCtx.beginPath();
+    chartCtx.moveTo(W - PAD, PAD);
+    chartCtx.lineTo(W - PAD, H - PAD);
+    chartCtx.stroke();
 }
 
 // ── Inspect panel (pause mode) ────────────────────────────────────
@@ -286,15 +337,75 @@ function inspectCell(gx, gy) {
     inspectEl.innerHTML = html;
 }
 
-// ── Crosshair on canvas hover ─────────────────────────────────────
+// ── Canvas interactions (crosshair, tooltip, drag select) ─────────
+let dragStart = null;
+
+function cellFromEvent(e) {
+    const rect = canvas.getBoundingClientRect();
+    return {
+        gx: Math.floor((e.clientX - rect.left) / CFG.CELL_SIZE),
+        gy: Math.floor((e.clientY - rect.top)  / CFG.CELL_SIZE),
+        px: e.clientX - rect.left,
+        py: e.clientY - rect.top,
+    };
+}
+
+function showTooltip(e, gx, gy) {
+    const cellCreatures = creatures.filter(c => c.x === gx && c.y === gy);
+    const hasFood = foods.some(f => f.x === gx && f.y === gy);
+
+    if (!hasFood && cellCreatures.length === 0) {
+        tooltip.style.display = "none";
+        return;
+    }
+
+    let lines = [`<b>(${gx}, ${gy})</b>`];
+    if (hasFood) lines.push("🟫 food");
+    for (const c of cellCreatures) {
+        lines.push(`🟢 e:${Math.round(c.energy)} age:${c.age} gen:${c.generation} g:${c.genes.energy_cost_multiplicator.toFixed(3)}`);
+    }
+    tooltip.innerHTML = lines.join("<br>");
+
+    const rect = canvas.getBoundingClientRect();
+    const tx = e.clientX - rect.left + 12;
+    const ty = e.clientY - rect.top  - 8;
+    tooltip.style.left    = tx + "px";
+    tooltip.style.top     = ty + "px";
+    tooltip.style.display = "block";
+}
+
+function showRegionInspect(x1, y1, x2, y2) {
+    const minX = Math.min(x1, x2), maxX = Math.max(x1, x2);
+    const minY = Math.min(y1, y2), maxY = Math.max(y1, y2);
+
+    const regionCreatures = creatures.filter(c => c.x >= minX && c.x <= maxX && c.y >= minY && c.y <= maxY);
+    const regionFood      = foods.filter(f => f.x >= minX && f.x <= maxX && f.y >= minY && f.y <= maxY);
+
+    if (regionCreatures.length === 0 && regionFood.length === 0) {
+        inspectEl.innerHTML = `<div class="inspect-title">Region (${minX},${minY})→(${maxX},${maxY})</div><div class="empty-cell">Empty region</div>`;
+        return;
+    }
+
+    const avgGene   = regionCreatures.length ? (regionCreatures.reduce((s, c) => s + c.genes.energy_cost_multiplicator, 0) / regionCreatures.length).toFixed(4) : "—";
+    const avgEnergy = regionCreatures.length ? Math.round(regionCreatures.reduce((s, c) => s + c.energy, 0) / regionCreatures.length) : "—";
+    const avgAge    = regionCreatures.length ? Math.round(regionCreatures.reduce((s, c) => s + c.age,    0) / regionCreatures.length) : "—";
+
+    inspectEl.innerHTML = `
+        <div class="inspect-title">Region</div>
+        <div class="inspect-coord">(${minX},${minY}) → (${maxX},${maxY})</div>
+        <div><span class="entry-label">Creatures </span><span class="entry-val">${regionCreatures.length}</span></div>
+        <div><span class="entry-label">Food      </span><span class="entry-val">${regionFood.length}</span></div>
+        <div><span class="entry-label">Avg gene  </span><span class="entry-val">${avgGene}</span></div>
+        <div><span class="entry-label">Avg energy</span><span class="entry-val">${avgEnergy}</span></div>
+        <div><span class="entry-label">Avg age   </span><span class="entry-val">${avgAge}</span></div>
+    `;
+}
+
 canvasWrap.addEventListener("mousemove", (e) => {
     if (!paused) return;
-    const rect = canvas.getBoundingClientRect();
-    const px = e.clientX - rect.left;
-    const py = e.clientY - rect.top;
-    const gx = Math.floor(px / CFG.CELL_SIZE);
-    const gy = Math.floor(py / CFG.CELL_SIZE);
+    const { gx, gy, px, py } = cellFromEvent(e);
 
+    // crosshair
     crosshair.style.display = "block";
     chH.style.top  = (gy * CFG.CELL_SIZE + CFG.CELL_SIZE / 2) + "px";
     chV.style.left = (gx * CFG.CELL_SIZE + CFG.CELL_SIZE / 2) + "px";
@@ -302,19 +413,54 @@ canvasWrap.addEventListener("mousemove", (e) => {
     chCell.style.top    = (gy * CFG.CELL_SIZE) + "px";
     chCell.style.width  = CFG.CELL_SIZE + "px";
     chCell.style.height = CFG.CELL_SIZE + "px";
+
+    if (dragStart) {
+        // update drag rect
+        const x1 = Math.min(dragStart.px, px);
+        const y1 = Math.min(dragStart.py, py);
+        const x2 = Math.max(dragStart.px, px);
+        const y2 = Math.max(dragStart.py, py);
+        dragRect.style.left   = x1 + "px";
+        dragRect.style.top    = y1 + "px";
+        dragRect.style.width  = (x2 - x1) + "px";
+        dragRect.style.height = (y2 - y1) + "px";
+        dragRect.style.display = "block";
+        tooltip.style.display = "none";
+    } else {
+        showTooltip(e, gx, gy);
+    }
+});
+
+canvasWrap.addEventListener("mousedown", (e) => {
+    if (!paused) return;
+    const { gx, gy, px, py } = cellFromEvent(e);
+    dragStart = { gx, gy, px, py };
+    dragRect.style.display = "none";
+});
+
+canvasWrap.addEventListener("mouseup", (e) => {
+    if (!paused || !dragStart) return;
+    const { gx, gy } = cellFromEvent(e);
+
+    if (gx === dragStart.gx && gy === dragStart.gy) {
+        // single click — inspect cell
+        inspectCell(gx, gy);
+    } else {
+        // drag — inspect region
+        showRegionInspect(dragStart.gx, dragStart.gy, gx, gy);
+    }
+
+    dragStart = null;
+    dragRect.style.display = "none";
 });
 
 canvasWrap.addEventListener("mouseleave", () => {
     crosshair.style.display = "none";
+    tooltip.style.display = "none";
+    dragStart = null;
+    dragRect.style.display = "none";
 });
 
-canvasWrap.addEventListener("click", (e) => {
-    if (!paused) return;
-    const rect = canvas.getBoundingClientRect();
-    const gx = Math.floor((e.clientX - rect.left)  / CFG.CELL_SIZE);
-    const gy = Math.floor((e.clientY - rect.top)    / CFG.CELL_SIZE);
-    inspectCell(gx, gy);
-});
 
 // ── Game loop ─────────────────────────────────────────────────────
 const TPS_MIN_EXP = 0;  // 2^0  = 1 tps
@@ -396,4 +542,54 @@ btnPause.addEventListener("click", () => {
         inspectEl.innerHTML = "";
         crosshair.style.display = "none";
     }
+});
+
+// ── Presets ───────────────────────────────────────────────────────
+const PRESETS = {
+    default: {
+        "cfg-grid-size": 50, "cfg-cell-size": 12, "cfg-ticks-per-second": 20,
+        "cfg-creatures-count": 10, "cfg-start-food": 300, "cfg-food-rate": 0.5,
+        "cfg-start-energy": 100, "cfg-max-energy": 550, "cfg-energy-food": 50,
+        "cfg-energy-loss": 1, "cfg-gene-min": 0.75, "cfg-gene-max": 1.25,
+        "cfg-repro-energy": 200, "cfg-mutation-rate": 0.05, "cfg-age-cost-factor": 1000,
+        "cfg-repro-cooldown": 50, "cfg-child-death-rate": 0.1, "cfg-parent-death-rate": 0.05,
+    },
+    "boom-bust": {
+        "cfg-grid-size": 50, "cfg-cell-size": 12, "cfg-ticks-per-second": 20,
+        "cfg-creatures-count": 10, "cfg-start-food": 500, "cfg-food-rate": 1.5,
+        "cfg-start-energy": 100, "cfg-max-energy": 550, "cfg-energy-food": 80,
+        "cfg-energy-loss": 0.5, "cfg-gene-min": 0.75, "cfg-gene-max": 1.25,
+        "cfg-repro-energy": 150, "cfg-mutation-rate": 0.05, "cfg-age-cost-factor": 2000,
+        "cfg-repro-cooldown": 5, "cfg-child-death-rate": 0, "cfg-parent-death-rate": 0,
+    },
+    extinction: {
+        "cfg-grid-size": 50, "cfg-cell-size": 12, "cfg-ticks-per-second": 20,
+        "cfg-creatures-count": 20, "cfg-start-food": 80, "cfg-food-rate": 0.15,
+        "cfg-start-energy": 100, "cfg-max-energy": 400, "cfg-energy-food": 30,
+        "cfg-energy-loss": 1.5, "cfg-gene-min": 0.75, "cfg-gene-max": 1.25,
+        "cfg-repro-energy": 250, "cfg-mutation-rate": 0.1, "cfg-age-cost-factor": 500,
+        "cfg-repro-cooldown": 80, "cfg-child-death-rate": 0.3, "cfg-parent-death-rate": 0.15,
+    },
+    stable: {
+        "cfg-grid-size": 50, "cfg-cell-size": 12, "cfg-ticks-per-second": 20,
+        "cfg-creatures-count": 15, "cfg-start-food": 200, "cfg-food-rate": 0.4,
+        "cfg-start-energy": 100, "cfg-max-energy": 450, "cfg-energy-food": 50,
+        "cfg-energy-loss": 1, "cfg-gene-min": 0.75, "cfg-gene-max": 1.25,
+        "cfg-repro-energy": 200, "cfg-mutation-rate": 0.03, "cfg-age-cost-factor": 1200,
+        "cfg-repro-cooldown": 100, "cfg-child-death-rate": 0.15, "cfg-parent-death-rate": 0.08,
+    },
+};
+
+function applyPreset(name) {
+    const p = PRESETS[name];
+    if (!p) return;
+    for (const [id, val] of Object.entries(p)) {
+        const el = document.getElementById(id);
+        if (el) el.value = val;
+    }
+}
+
+presetSelect.addEventListener("change", () => applyPreset(presetSelect.value));
+btnRandomSeed.addEventListener("click", () => {
+    seedInput.value = Math.floor(Math.random() * 999999);
 });

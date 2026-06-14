@@ -129,7 +129,7 @@ function makeCreature(x, y, energy, generation, energyCostGene) {
         age: 0,
         generation,
         lastReproducedAt: -Infinity,
-        genes: { energy_cost_multiplicator: energyCostGene }
+        genes: { energy_cost_multiplicator: energyCostGene, vision: 10 }
     };
 }
 
@@ -138,19 +138,59 @@ function findFoodAt(x, y) {
     return foods.findIndex(f => f.x === x && f.y === y);
 }
 
+function findNearestFood(creature) {
+    let nearest = null;
+    let nearestDist = Infinity;
+
+    for (const food of foods) {
+        const dx = food.x - creature.x;
+        const dy = food.y - creature.y;
+
+        const dist = Math.abs(dx) + Math.abs(dy);
+
+        if (
+            dist <= creature.genes.vision &&
+            dist < nearestDist
+        ) {
+            nearest = food;
+            nearestDist = dist;
+        }
+    }
+
+    return nearest;
+}
+
+function moveRandomly(creature){
+    const dir = Math.floor(rand() * 4);
+    if (dir === 0) creature.y--;
+    else if (dir === 1) creature.y++;
+    else if (dir === 2) creature.x--;
+    else creature.x++;
+
+    creature.x = Math.max(0, Math.min(CFG.GRID_SIZE - 1, creature.x));
+    creature.y = Math.max(0, Math.min(CFG.GRID_SIZE - 1, creature.y));
+}
+
 function update() {
     tick++;
     const newborns = [];
 
     for (const creature of creatures) {
-        const dir = Math.floor(rand() * 4);
-        if (dir === 0) creature.y--;
-        else if (dir === 1) creature.y++;
-        else if (dir === 2) creature.x--;
-        else creature.x++;
 
-        creature.x = Math.max(0, Math.min(CFG.GRID_SIZE - 1, creature.x));
-        creature.y = Math.max(0, Math.min(CFG.GRID_SIZE - 1, creature.y));
+        const food = findNearestFood(creature);
+
+        if (food) {
+            const dx = food.x - creature.x;
+            const dy = food.y - creature.y;
+        
+            if (Math.abs(dx) > Math.abs(dy)) {
+                creature.x += Math.sign(dx);
+            } else {
+                creature.y += Math.sign(dy);
+            }
+        } else {
+            moveRandomly(creature);
+        }
 
         creature.energy -= CFG.ENERGY_LOSS_PER_TICK * creature.genes.energy_cost_multiplicator * (1 + creature.age / CFG.AGE_COST_FACTOR);
         creature.age++;

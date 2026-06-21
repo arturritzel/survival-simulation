@@ -126,13 +126,16 @@ function initSim() {
 }
 
 function makeCreature(x, y, energy, generation, energyCostGene, visionGene) {
+
+    const tempVisionGene = ((energyCostGene/CFG.GENE_ENERGY_COST_MAX) * (CFG.GENE_VISION_MAX-CFG.GENE_VISION_MIN)) + CFG.GENE_VISION_MIN;
+
     return {
         x, y,
         energy,
         age: 0,
         generation,
         lastReproducedAt: -Infinity,
-        genes: { energy_cost_multiplicator: energyCostGene, vision: visionGene }
+        genes: { energy_cost_multiplicator: energyCostGene, vision: tempVisionGene }
     };
 }
 
